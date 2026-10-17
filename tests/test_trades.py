@@ -1,4 +1,4 @@
-from app.database import init_db
+from app.database import init_db, get_session
 from app import main
 from app.models import Trade
 
