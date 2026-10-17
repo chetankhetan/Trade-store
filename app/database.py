@@ -1,24 +1,46 @@
-from sqlmodel import create_engine, Session
-from typing import Optional
+from typing import Optional, AsyncGenerator
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import SQLModel
+from contextlib import asynccontextmanager
 
-def get_engine(db_url: Optional[str] = None):
-    if db_url:
-        url = db_url
-    else:
-        url = "sqlite:///./trade_store.db"
-    # check_same_thread False for SQLite + FastAPI
-    engine = create_engine(url, echo=False, connect_args={"check_same_thread": False})
-    return engine
+# default to sqlite async for quick local runs; you can pass a DB URL to init_db()
+DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./trade_store.db"
 
+_engine: Optional[AsyncEngine] = None
+_async_session = None
 
-_engine = get_engine()
+def _create_async_engine(db_url: str):
+    return create_async_engine(db_url, echo=False, future=True)
 
-def init_db(db_url: Optional[str] = None):
-    global _engine
-    if db_url:
-        _engine = get_engine(db_url)
-    from app.models import SQLModel
-    SQLModel.metadata.create_all(_engine)
+async def init_db(db_url: Optional[str] = None):
+    """
+    Initialize the DB and create tables. Call this once on startup.
+    """
+    global _engine, _async_session
+    url = db_url or DEFAULT_DATABASE_URL
+    _engine = _create_async_engine(url)
+    # sessionmaker for AsyncSession
+    _async_session = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+    # create tables (run sync create_all in an async context)
+    async with _engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
 
-def get_session():
-    return Session(_engine)
+@asynccontextmanager
+async def get_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Async context manager dependency for FastAPI to yield a DB session.
+    Usage: session: AsyncSession = Depends(get_session)
+    """
+    global _async_session
+    if _async_session is None:
+        # lazily create engine/session if init_db was not called explicitly
+        await init_db()
+    async with _async_session() as session:
+        try:
+            yield session
+        except:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

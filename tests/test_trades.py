@@ -1,16 +1,17 @@
+from app.database import init_db, get_engine
+from app import main
+from app.models import Trade
+
 from fastapi.testclient import TestClient
 from datetime import date, timedelta
 import os
 
-from app import main
-from app.database import init_db, get_engine
-from app.models import Trade
-
 client = TestClient(main.app)
 
 def setup_module(module):
-    # Use a test database file
-    init_db("sqlite:///./test_trade_store.db")
+    # Use a test database file in async sqlite form
+    import asyncio
+    asyncio.run(init_db("sqlite+aiosqlite:///./test_trade_store.db"))
 
 def teardown_module(module):
     try:

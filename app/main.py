@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from app.models import Trade
-from app.database import init_db
-from app import crud
+# app/main.py
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from app.models import Trade
+from app import crud
+from app.database import init_db, get_session  # get_session is async context manager
 
-app = FastAPI(title="Trade Store API")
+app = FastAPI(title="Trade Store API (async DB)")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,33 +16,33 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-def on_startup():
-    init_db()
+async def on_startup():
+    # initialize DB (async). Optionally pass a DB URL as needed.
+    await init_db()
     
 @app.get("/")
 def read_root():
-    return {"message": "This is home page. Application started successfully"}
+    return {"message": "Application started successfully"}
 
-@app.post('/trades', response_model=Trade)
-def create_trade(trade: Trade):
+@app.post("/trades", response_model=Trade)
+async def create_trade(trade: Trade, session = Depends(get_session)):
     try:
-        created = crud.store_trade(trade)
+        created = await crud.store_trade(trade, session)
         return created
     except crud.MaturityError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except crud.VersionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get('/trades', response_model=list[Trade])
-def get_trades():
-    return crud.list_trades()
+@app.get("/trades", response_model=list[Trade])
+async def get_trades(session = Depends(get_session)):
+    return await crud.list_trades(session)
 
-@app.get('/trades/{trade_id}', response_model=list[Trade])
-def get_trade(trade_id: str):
-    return crud.get_trades_by_id(trade_id)
+@app.get("/trades/{trade_id}", response_model=list[Trade])
+async def get_trade(trade_id: str, session = Depends(get_session)):
+    return await crud.get_trades_by_id(trade_id, session)
 
-# admin endpoint to trigger expiration (useful for tests and manual run)
-@app.post('/admin/expire')
-def expire_trades():
-    count = crud.update_expired_trades()
+@app.post("/admin/expire")
+async def expire_trades(session = Depends(get_session)):
+    count = await crud.update_expired_trades(session)
     return {"expired_count": count}

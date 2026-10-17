@@ -1,67 +1,83 @@
 from datetime import date
-from sqlmodel import select
-from app.models import Trade
-from app.database import get_session
 from typing import List
+from sqlmodel import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.models import Trade
 
 class VersionError(Exception):
-    pass
+    def init(self, incoming_version: int, existing_version: int): 
+        self.incoming = incoming_version
+        self.existing = existing_version
+        super().init(f"Incoming version {incoming_version} is lower than existing {existing_version}")
 
 class MaturityError(Exception):
     pass
 
-def store_trade(trade: Trade) -> Trade:
-    session = get_session()
+async def store_trade(trade: Trade, session: AsyncSession) -> Trade:
+    """
+    Store a trade (async). session should be an AsyncSession provided by the dependency.
+    Rules:
+      - Reject if maturity_date < today
+      - If existing highest version exists:
+          incoming < existing -> VersionError
+          incoming == existing -> replace fields on existing (update)
+          incoming > existing -> insert new row (higher version)
+    """
     today = date.today()
     if trade.maturity_date < today:
         raise MaturityError("Maturity date is before today")
 
-    # find existing highest version for this trade_id
     stmt = select(Trade).where(Trade.trade_id == trade.trade_id).order_by(Trade.version.desc())
-    existing = session.exec(stmt).first()
+    res = await session.execute(stmt)
+    existing = res.scalars().first()
+
     if existing:
         if trade.version < existing.version:
             raise VersionError(f"Incoming version {trade.version} is lower than existing {existing.version}")
         elif trade.version == existing.version:
-            # replace: update existing
+            # Replace fields on the existing record
             existing.counter_party_id = trade.counter_party_id
             existing.book_id = trade.book_id
             existing.maturity_date = trade.maturity_date
             existing.created_date = trade.created_date
             existing.expired = trade.expired
             session.add(existing)
-            session.commit()
-            session.refresh(existing)
+            await session.commit()
+            await session.refresh(existing)
             return existing
         else:
-            # higher version: insert
+            # Higher version -> insert new record
             session.add(trade)
-            session.commit()
-            session.refresh(trade)
+            await session.commit()
+            await session.refresh(trade)
             return trade
     else:
         session.add(trade)
-        session.commit()
-        session.refresh(trade)
+        await session.commit()
+        await session.refresh(trade)
         return trade
 
-def list_trades() -> List[Trade]:
-    session = get_session()
-    stmt = select(Trade)
-    return list(session.exec(stmt))
+async def list_trades(session: AsyncSession) -> List[Trade]:
+    res = await session.execute(select(Trade))
+    return res.scalars().all()
 
-def get_trades_by_id(trade_id: str) -> List[Trade]:
-    session = get_session()
+async def get_trades_by_id(trade_id: str, session: AsyncSession) -> List[Trade]:
     stmt = select(Trade).where(Trade.trade_id == trade_id).order_by(Trade.version.desc())
-    return list(session.exec(stmt))
+    res = await session.execute(stmt)
+    return res.scalars().all()
 
-def update_expired_trades() -> int:
-    session = get_session()
+async def update_expired_trades(session: AsyncSession) -> int:
+    """
+    Mark trades as expired where maturity_date < today and expired == False.
+    Returns number of rows updated.
+    """
     today = date.today()
     stmt = select(Trade).where(Trade.maturity_date < today).where(Trade.expired == False)
-    rows = list(session.exec(stmt))
+    res = await session.execute(stmt)
+    rows = res.scalars().all()
     for r in rows:
         r.expired = True
         session.add(r)
-    session.commit()
+    if rows:
+        await session.commit()
     return len(rows)
