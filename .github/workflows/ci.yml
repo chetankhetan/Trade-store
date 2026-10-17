@@ -32,7 +32,15 @@ jobs:
           # Ensure async sqlite driver is available in the runner
           pip install aiosqlite
 
+      - name: Install package (if present)
+        run: |
+          # Install the package in editable mode if packaging is present.
+          # Allow failure so tests still run using PYTHONPATH fallback.
+          pip install -e . || true
+
       - name: Run tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           pytest -q
 
