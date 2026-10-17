@@ -1,4 +1,4 @@
-from app.database import init_db, get_engine
+from app.database import init_db
 from app import main
 from app.models import Trade
 
