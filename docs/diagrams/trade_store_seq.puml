@@ -1,0 +1,15 @@
+@startuml
+actor Client
+participant API
+participant Store
+
+Client -> API: POST /trades
+API -> Store: validate & store
+Store --> API: 200 OK
+API --> Client: 200 OK
+
+Client -> API: POST /admin/expire
+API -> Store: update expired trades
+Store --> API: {count}
+API --> Client: {count}
+@enduml
