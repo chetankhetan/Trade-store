@@ -7,6 +7,9 @@ from sqlalchemy import text
 from app import main
 from app.database import init_db, get_session, get_session_ctx
 
+from unittest.mock import AsyncMock, patch
+from async_asgi_testclient import TestClient as ASGITestClient
+
 # Mark all tests in this module as async
 pytestmark = pytest.mark.asyncio(loop_scope="module") 
 
@@ -50,7 +53,8 @@ async def test_reject_past_maturity(client):
     }
     r = await client.post("/trades", json=payload)
     assert r.status_code == 400
-    assert "Maturity date" in r.json()["detail"]
+    assert "Maturity date" in r.json()["message"]
+    assert r.json()["error"] == "MaturityError"
 
 async def test_store_and_replace_same_version(client):
     payload = {
@@ -85,7 +89,8 @@ async def test_reject_lower_version(client):
     }
     r = await client.post("/trades", json=payload)
     assert r.status_code == 400
-    assert "lower" in r.json()["detail"]
+    assert "is lower than existing" in r.json()["message"]
+    assert r.json()["error"] == "VersionError"
 
 async def test_expiration_job_marks_expired(client):
     payload = {
@@ -114,3 +119,35 @@ async def test_expiration_job_marks_expired(client):
     resp = await client.post("/admin/expire")
     assert resp.status_code == 200
     assert resp.json()["expired_count"] >= 1
+
+async def test_application_lifespan_starts_scheduler():
+    """
+    Verifies that booting the FastAPI application triggers the lifespan hook,
+    spins up the APScheduler engine, and shuts it down cleanly at completion.
+    """
+    # Patch the scheduler methods to see if they get called on startup/shutdown
+    with patch("app.main.AsyncIOScheduler.start") as mock_start, \
+         patch("app.main.AsyncIOScheduler.shutdown") as mock_shutdown:
+         
+        # ASGITestClient triggers the lifespan __enter__ and __exit__ blocks automatically
+        async with ASGITestClient(main.app) as test_client:
+            # Assert that the scheduler was commanded to start running
+            mock_start.assert_called_once()
+            
+        # Assert that exiting the context block commands the scheduler to shutdown safely
+        mock_shutdown.assert_called_once()
+
+async def test_scheduled_job_execution_logic():
+    """
+    Executes the underlying scheduled function directly to verify that the
+    background task can independently grab database sessions and run without errors.
+    """
+    # Mock the underlying crud worker so we aren't dependent on database states for this unit test
+    with patch("app.crud.update_expired_trades", new_callable=AsyncMock) as mock_update:
+        mock_update.return_return_value = 5  # Mock that 5 records were updated
+        
+        # Manually trigger the scheduled job function
+        await main.scheduled_expiration_job()
+        
+        # Verify the background job successfully checked out the session and talked to the CRUD layer
+        mock_update.assert_called_once()

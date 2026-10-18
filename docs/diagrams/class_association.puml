@@ -1,0 +1,57 @@
+@startuml
+skinparam ClassAttributeIconSize 0
+
+package "app.models" {
+    class Trade <<SQLModel>> {
+        + id : Optional[int]
+        + trade_id : str
+        + version : int
+        + counter_party_id : str
+        + book_id : str
+        + maturity_date : date
+        + created_date : date
+        + expired : bool
+    }
+}
+
+package "app.database" {
+    class DatabaseEngine {
+        - _engine : AsyncEngine
+        - _async_session : sessionmaker
+        + init_db(db_url: str) : void
+        + get_session() : AsyncGenerator
+        + get_session_ctx() : AsyncContextManager
+    }
+}
+
+package "app.crud" {
+    class TradeOperations {
+        + store_trade(trade: Trade, session: AsyncSession) : Trade
+        + list_trades(session: AsyncSession) : List[Trade]
+        + get_trades_by_id(trade_id: str, session: AsyncSession) : List[Trade]
+        + update_expired_trades(session: AsyncSession) : int
+    }
+    
+    exception TradeError
+    exception VersionError
+    exception MaturityError
+    
+    TradeError <|-- VersionError
+    TradeError <|-- MaturityError
+}
+
+package "app.main" {
+    class FastAPIApplication {
+        + lifespan(app) : AsyncContextManager
+        + scheduled_expiration_job() : void
+        + create_or_update_trade() : Trade
+        + get_trades_by_id() : List[Trade]
+        + expire_trades() : dict
+        + trade_error_handler() : JSONResponse
+    }
+}
+
+FastAPIApplication --> DatabaseEngine : borrows sessions from
+FastAPIApplication --> TradeOperations : delegates route logic to
+TradeOperations ..> Trade : mutates and stores
+@endum()

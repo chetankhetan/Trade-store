@@ -1,0 +1,32 @@
+@startuml
+skinparam Style strictuml
+autonumber
+
+actor "Developer / Operator" as User
+participant "Pytest Engine" as Pytest
+participant "FastAPI (Uvicorn)" as App
+participant "Database Engine" as DB
+
+== Production / Local Run Pathway ==
+User -> App : Boot application (uvicorn app.main:app)
+activate App
+App -> DB : init_db() [sys.modules has no pytest]
+activate DB
+DB --> App : Connection pool configured (Schema creation bypassed 🔒)
+deactivate DB
+App --> User : Server running (Ready for live traffic / Alembic migrations)
+deactivate App
+
+== Test Execution Sandbox Pathway ==
+User -> Pytest : Execute tests (pytest)
+activate Pytest
+Pytest -> DB : setup_test_database_schema fixture -> init_db()
+activate DB
+Note over DB: "pytest" in sys.modules is TRUE ✅
+DB -> DB : Run SQLModel.metadata.create_all
+DB --> Pytest : Schema built in isolated test DB file
+deactivate DB
+Pytest -> Pytest : Execute Sandbox Transaction Tests
+Pytest --> User : Test execution results returned (All PASSED)
+deactivate Pytest
+@endum()

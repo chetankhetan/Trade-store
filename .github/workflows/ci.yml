@@ -12,31 +12,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install wheel
-          pip install -r requirements.txt
-          # Ensure async sqlite driver is available in the runner
-          pip install aiosqlite
-
-      - name: Install package (if present)
-        run: |
-          # Install the package in editable mode if packaging is present.
-          # Allow failure so tests still run using PYTHONPATH fallback.
-          pip install -e . || true
+          python -m pip install --upgrade pip wheel
+          pip install -r requirements.txt aiosqlite
 
       - name: Run tests
         env:
@@ -50,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@v0.5.0
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
           format: 'table'
