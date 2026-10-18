@@ -25,16 +25,14 @@ async def init_db(db_url: Optional[str] = None):
     # create tables (run sync create_all in an async context)
     async with _engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-
-@asynccontextmanager
+            
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
-    Async context manager dependency for FastAPI to yield a DB session.
-    Usage: session: AsyncSession = Depends(get_session)
+    Standard dependency for FastAPI.
+    Usage in routes: session: AsyncSession = Depends(get_session)
     """
     global _async_session
     if _async_session is None:
-        # lazily create engine/session if init_db was not called explicitly
         await init_db()
     async with _async_session() as session:
         try:
@@ -44,3 +42,12 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+            
+#context manager helper for non-FastAPI code blocks (like tests)
+@asynccontextmanager
+async def get_session_ctx() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Use this helper anywhere you want to use 'async with' manually in code.
+    """
+    async for session in get_session():
+        yield session

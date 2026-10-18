@@ -1,14 +1,14 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Trade
 
 class VersionError(Exception):
-    def init(self, incoming_version: int, existing_version: int): 
+    def __init__(self, incoming_version: int, existing_version: int): 
         self.incoming = incoming_version
         self.existing = existing_version
-        super().init(f"Incoming version {incoming_version} is lower than existing {existing_version}")
+        super().__init__(f"Incoming version {incoming_version} is lower than existing {existing_version}")
 
 class MaturityError(Exception):
     pass
@@ -24,16 +24,30 @@ async def store_trade(trade: Trade, session: AsyncSession) -> Trade:
           incoming > existing -> insert new row (higher version)
     """
     today = date.today()
+    
+    # Force safety conversion for created_date
+    if isinstance(trade.maturity_date, str):
+        trade.maturity_date = datetime.fromisoformat(trade.maturity_date.replace("Z", "")).date()
+
+    if isinstance(trade.created_date, str):
+        trade.created_date = datetime.fromisoformat(trade.created_date.replace("Z", "")).date()
+
     if trade.maturity_date < today:
         raise MaturityError("Maturity date is before today")
-
+    
     stmt = select(Trade).where(Trade.trade_id == trade.trade_id).order_by(Trade.version.desc())
     res = await session.execute(stmt)
     existing = res.scalars().first()
 
     if existing:
+        # Extra safety fallback for existing database record properties if needed
+        if isinstance(existing.maturity_date, str):
+            existing.maturity_date = datetime.fromisoformat(existing.maturity_date.replace("Z", "")).date()
+        if isinstance(existing.created_date, str):
+            existing.created_date = datetime.fromisoformat(existing.created_date.replace("Z", "")).date()
+        
         if trade.version < existing.version:
-            raise VersionError(f"Incoming version {trade.version} is lower than existing {existing.version}")
+            raise VersionError(trade.version, existing.version)
         elif trade.version == existing.version:
             # Replace fields on the existing record
             existing.counter_party_id = trade.counter_party_id
