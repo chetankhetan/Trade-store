@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSessio
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from contextlib import asynccontextmanager
+import sys
 
 # default to sqlite async for quick local runs; you can pass a DB URL to init_db()
 DEFAULT_DATABASE_URL = "sqlite+aiosqlite:///./trade_store.db"
@@ -22,9 +23,13 @@ async def init_db(db_url: Optional[str] = None):
     _engine = _create_async_engine(url)
     # sessionmaker for AsyncSession
     _async_session = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
-    # create tables (run sync create_all in an async context)
-    async with _engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    
+    # Only allow structural table creation inside an active pytest execution run
+    if "pytest" in sys.modules:
+        async with _engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+    else:
+        print("[Database] Skipping automatic table creation (Not in a Test environment).")
             
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -46,8 +51,5 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 #context manager helper for non-FastAPI code blocks (like tests)
 @asynccontextmanager
 async def get_session_ctx() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Use this helper anywhere you want to use 'async with' manually in code.
-    """
     async for session in get_session():
         yield session
