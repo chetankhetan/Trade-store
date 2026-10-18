@@ -3,15 +3,7 @@ from typing import List
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Trade
-
-class VersionError(Exception):
-    def __init__(self, incoming_version: int, existing_version: int): 
-        self.incoming = incoming_version
-        self.existing = existing_version
-        super().__init__(f"Incoming version {incoming_version} is lower than existing {existing_version}")
-
-class MaturityError(Exception):
-    pass
+from app.exceptions import VersionError, MaturityError
 
 async def store_trade(trade: Trade, session: AsyncSession) -> Trade:
     """
