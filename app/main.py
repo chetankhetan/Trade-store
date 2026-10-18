@@ -3,7 +3,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.models import Trade
 from app import crud
-from app.database import init_db, get_session  # get_session is async context manager
+from app.database import init_db, get_session
 
 app = FastAPI(title="Trade Store API (async DB)")
 
