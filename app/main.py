@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -52,6 +53,14 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI with Lifespan management
 app = FastAPI(title="Trade Store API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], #tighten down as per allowed url's
+    allow_credentials=False,  # Changed to True to allow specific url's
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # CENTRAL EXCEPTION HANDLER
 @app.exception_handler(TradeError)
