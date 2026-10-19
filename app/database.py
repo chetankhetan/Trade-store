@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSessio
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
 from contextlib import asynccontextmanager
+from app.config import settings
 import sys
 
 # default to sqlite async for quick local runs; you can pass a DB URL to init_db()
@@ -12,7 +13,10 @@ _engine: Optional[AsyncEngine] = None
 _async_session = None
 
 def _create_async_engine(db_url: str):
-    return create_async_engine(db_url, echo=False, future=True)
+    if "sqlite" in db_url:
+       return create_async_engine(db_url, echo=False, future=True)
+    else: 
+       return create_async_engine(db_url, pool_size=4, echo=False, future=True)
 
 async def init_db(db_url: Optional[str] = None):
     """
@@ -34,11 +38,10 @@ async def init_db(db_url: Optional[str] = None):
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """
     Standard dependency for FastAPI.
-    Usage in routes: session: AsyncSession = Depends(get_session)
     """
     global _async_session
     if _async_session is None:
-        await init_db()
+        await init_db(settings.DATABASE_URL)
     async with _async_session() as session:
         try:
             yield session
